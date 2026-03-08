@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	_ "image/jpeg"
-	_ "image/png"
 	"log"
 	"net"
 
@@ -20,23 +18,36 @@ func main() {
 	fmt.Println("Успешное подключение к серверу")
 
 	decoder := json.NewDecoder(conn)
-	var task protocol.Task
-	err = decoder.Decode(&task)
-	if err != nil {
-		fmt.Println("Ошибка дешифрования", err)
-		return
-	}
-	fmt.Printf("Получена задача #%d с данными %s\n", task.ID, string(task.Payload))
-
 	encoder := json.NewEncoder(conn)
-	res := protocol.Result{
-		ID:      task.ID,
-		Success: true,
-		Payload: []byte("Pong"),
-	}
-	err = encoder.Encode(res)
-	if err != nil {
-		fmt.Println("Ошибка отправки ответа: ", err)
+
+	for {
+		var task protocol.Task
+		err := decoder.Decode(&task)
+		if err != nil {
+			fmt.Println("Соединение разорвано или ошибка JSON: ", err)
+			break
+		}
+		fmt.Printf("Получена задача с ID: %d\n", task.ID)
+
+		Result := protocol.Result{
+			ID:      task.ID,
+			Payload: make([]byte, len(task.Payload)),
+			Bounds:  task.Bounds,
+		}
+
+		for i := 0; i < len(task.Payload); i++ {
+			if (i+1)%4 == 0 {
+				Result.Payload[i] = task.Payload[i]
+			} else {
+				Result.Payload[i] = 255 - task.Payload[i]
+			}
+		}
+
+		err = encoder.Encode(Result)
+		if err != nil {
+			fmt.Println("Ошибка отправки ответа: ", err)
+			break
+		}
 	}
 
 }

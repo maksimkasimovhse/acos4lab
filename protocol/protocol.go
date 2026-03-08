@@ -9,7 +9,7 @@ type Task struct {
 }
 
 type Result struct {
-	ID      int    `json:"id"`
-	Success bool   `json:"success"`
-	Payload []byte `json:"payload"`
+	ID      int             `json:"id"`
+	Payload []byte          `json:"payload"`
+	Bounds  image.Rectangle `json:"bounds"`
 }
