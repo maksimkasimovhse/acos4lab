@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 
 	"acos/protocol"
 )
 
 func main() {
-	conn, err := net.Dial("tcp", "localhost:8080")
+	addr := os.Getenv("SERVER_ADDR")
+
+	if addr == "" {
+		addr = "localhost:8080"
+	}
+
+	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		log.Fatal("Не удалось соединиться с сервером: ", err)
 	}

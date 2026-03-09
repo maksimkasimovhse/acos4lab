@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	Port           = ":8080"
 	RowsPerTask    = 100
 	BufferCapacity = 100
 )
@@ -24,11 +23,16 @@ func main() {
 	retry := make(chan protocol.Task, BufferCapacity)
 	results := make(chan protocol.Result, BufferCapacity) //динамически высчитывать размер буфера
 
-	ln, err := net.Listen("tcp", Port)
+	port := os.Getenv("SERVER_PORT")
+	if port == "" {
+		port = ":8080"
+	}
+
+	ln, err := net.Listen("tcp", port)
 	if err != nil {
 		fmt.Println("Ошибка: ", err)
 	}
-	fmt.Println("Сервер слушает на порту 8080")
+	fmt.Printf("Сервер слушает на порту: %s\n", port)
 
 	totalTasks, rgbaImg := CuttingAndDistribution(jobs)
 	if rgbaImg == nil {
@@ -91,8 +95,12 @@ func getTask(jobs, retry chan protocol.Task) protocol.Task {
 
 }
 func CuttingAndDistribution(jobs chan protocol.Task) (int, *image.RGBA) {
-	filePath := "images/input.jpg"
-	file, err := os.Open(filePath)
+	filePath := os.Getenv("INPUT_PATH")
+	if filePath == "" {
+		filePath = "images/input.jpg"
+	}
+
+	file, err := os.Open(filePath) //прием не только input.jpg
 	if err != nil {
 		fmt.Printf("Ошибка: не удалось найти файл по пути %s: %v\n", filePath, err)
 		return 0, nil
@@ -166,3 +174,6 @@ func saveImage(img *image.RGBA) {
 		fmt.Println("Ошибка сохранения PNG:", err)
 	}
 }
+
+//grafana для визуализации
+//воркеры на выбор

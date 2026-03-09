@@ -1,0 +1,24 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - INPUT_PATH=images/input.jpg
+      - SERVER_PORT=:8080
+    volumes:
+      - ./images:/root/images
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    environment:
+      - SERVER_ADDR=server:8080
+    depends_on:
+      - server
+    deploy:
+      replicas: 3
+    restart: on-failure
