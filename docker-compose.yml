@@ -10,7 +10,7 @@ services:
       - SERVER_PORT=:8080
     volumes:
       - ./images:/app/images
-    restart: on-failure
+    restart: always
 
   worker:
     build:
@@ -20,5 +20,5 @@ services:
       - SERVER_ADDR=server:8080
     depends_on:
       - server
-    scale: 3
+    scale: 1
     restart: on-failure

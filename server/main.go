@@ -33,13 +33,14 @@ func main() {
 	ln, err := net.Listen("tcp", port)
 	if err != nil {
 		fmt.Println("Ошибка: ", err)
+		return
 	}
 	fmt.Printf("Сервер слушает на порту: %s\n", port)
 
 	for {
 		var fileName string
 		for {
-			fmt.Println("Введите название файла(с расширением), который хотите инвертировать")
+			fmt.Println("Введите название файла (с расширением), который хотите инвертировать")
 			_, err := fmt.Scan(&fileName)
 			if err != nil {
 				fmt.Println("Ошибка ввода: ", err)
@@ -60,14 +61,13 @@ func main() {
 			return
 		}
 
-		go ImageCollector(results, rgbaImg, totalTasks, next, fileName)
+		startTime := time.Now()
+		go ImageCollector(results, rgbaImg, totalTasks, next, fileName, startTime)
 
-		fmt.Println("Ждем воркеров")
+		fmt.Println("Ожидание выполнения воркерами...")
+
 	WorkerLoop:
 		for {
-			ln.(*net.TCPListener).SetDeadline(time.Now().Add(1 * time.Second))
-			conn, err := ln.Accept()
-
 			select {
 			case <-next:
 				fmt.Println("Обработка окончена, можете переходить к следующему изображению")
@@ -76,6 +76,9 @@ func main() {
 			default:
 
 			}
+
+			ln.(*net.TCPListener).SetDeadline(time.Now().Add(50 * time.Millisecond))
+			conn, err := ln.Accept()
 
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -121,13 +124,6 @@ func getTask(jobs, retry chan protocol.Task) protocol.Task {
 	select {
 	case task := <-retry:
 		return task
-	default:
-
-	}
-
-	select {
-	case task := <-retry:
-		return task
 	case task := <-jobs:
 		return task
 	}
@@ -151,7 +147,7 @@ func CuttingAndDistribution(jobs chan protocol.Task, filename string) (int, *ima
 		fmt.Printf("Ошибка декодирования: %v\n", err)
 		return 0, nil
 	}
-	fmt.Printf("Файл открыт. Формат: %s, Размер: %dx%d\n", format, img.Bounds().Dx(), img.Bounds().Dy())
+	fmt.Printf("Файл: %s | Формат: %s | Разрешение: %dx%d\n", filename, format, img.Bounds().Dx(), img.Bounds().Dy())
 	bounds := img.Bounds()
 	rgbaImg := image.NewRGBA(bounds)
 	draw.Draw(rgbaImg, bounds, img, bounds.Min, draw.Src)
@@ -178,22 +174,40 @@ func CuttingAndDistribution(jobs chan protocol.Task, filename string) (int, *ima
 		jobs <- task
 		totalTasks++
 	}
-
+	fmt.Printf("Нарезано задач: %d (размер блока: %d строк)\n", totalTasks, rowsPerTask)
 	return totalTasks, rgbaImg
 }
 
-func ImageCollector(results chan protocol.Result, rgbaImg *image.RGBA, totalTasks int, next chan bool, fileName string) {
+func ImageCollector(results chan protocol.Result, rgbaImg *image.RGBA, totalTasks int, next chan bool, fileName string, startTime time.Time) {
 	completed := 0
 	for res := range results {
 		offset := res.Bounds.Min.Y * rgbaImg.Stride
 		copy(rgbaImg.Pix[offset:], res.Payload)
 
 		completed++
-		fmt.Printf("Получен фрагмент %d. Прогресс: %d/%d\n", res.ID, completed, totalTasks)
 
+		if completed%10 == 0 || completed == totalTasks {
+			percent := float64(completed) / float64(totalTasks) * 100
+
+			barLen := 20
+			filledLen := int(float64(barLen) * float64(completed) / float64(totalTasks))
+			bar := ""
+			for i := 0; i < barLen; i++ {
+				if i < filledLen {
+					bar += "="
+				} else if i == filledLen {
+					bar += ">"
+				} else {
+					bar += "-"
+				}
+			}
+
+			fmt.Printf("\r [ %-20s ] %.1f%% (%d/%d фрагментов)", bar, percent, completed, totalTasks)
+		}
 		if completed == totalTasks {
 			fmt.Println("Все части получены. Формируем файл...")
-
+			duration := time.Since(startTime)
+			fmt.Printf("Все воркеры справились с задачей за: %v\n", duration)
 			saveImage(rgbaImg, fileName)
 			fmt.Println("Работа завершена успешно!")
 			next <- true
@@ -226,5 +240,3 @@ func drainChannels(jobs, retry chan protocol.Task, results chan protocol.Result)
 		<-results
 	}
 }
-
-//grafana для визуализации
