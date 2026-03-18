@@ -3,10 +3,10 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
-    ports:
-      - "8080:8080"
+    stdin_open: true
+    tty: true
     environment:
-      - INPUT_PATH=images/input.jpg
+      - INPUT_PATH=images/
       - SERVER_PORT=:8080
     volumes:
       - ./images:/root/images

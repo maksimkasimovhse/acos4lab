@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"net"
 	"os"
+	"time"
 
 	"acos/protocol"
 )
@@ -21,7 +22,8 @@ const (
 func main() {
 	jobs := make(chan protocol.Task, BufferCapacity)
 	retry := make(chan protocol.Task, BufferCapacity)
-	results := make(chan protocol.Result, BufferCapacity) //динамически высчитывать размер буфера
+	results := make(chan protocol.Result, BufferCapacity)
+	next := make(chan bool, 1)
 
 	port := os.Getenv("SERVER_PORT")
 	if port == "" {
@@ -34,22 +36,59 @@ func main() {
 	}
 	fmt.Printf("Сервер слушает на порту: %s\n", port)
 
-	totalTasks, rgbaImg := CuttingAndDistribution(jobs)
-	if rgbaImg == nil {
-		fmt.Println("Критическая ошибка: невозможно подготовить изображение.")
-		return
-	}
-
-	go ImageCollector(results, rgbaImg, totalTasks)
-
 	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			fmt.Println("Ошибка подключения к воркеру: ", err)
-			continue
+		var fileName string
+		for {
+			fmt.Println("Введите название файла(с расширением), который хотите инвертировать")
+			_, err := fmt.Scan(&fileName)
+			if err != nil {
+				fmt.Println("Ошибка ввода: ", err)
+				continue
+			}
+
+			if _, err := os.Stat("images/" + fileName); err != nil {
+				fmt.Println("Файл не найден или недоступен")
+				continue
+			}
+
+			break
 		}
-		fmt.Println("Воркер подключился")
-		go handleWorker(conn, jobs, retry, results)
+
+		totalTasks, rgbaImg := CuttingAndDistribution(jobs, fileName)
+		if rgbaImg == nil {
+			fmt.Println("Критическая ошибка: невозможно подготовить изображение")
+			return
+		}
+
+		go ImageCollector(results, rgbaImg, totalTasks, next, fileName)
+
+		fmt.Println("Ждем воркеров")
+	WorkerLoop:
+		for {
+			ln.(*net.TCPListener).SetDeadline(time.Now().Add(1 * time.Second))
+			conn, err := ln.Accept()
+
+			select {
+			case <-next:
+				fmt.Println("Обработка окончена, можете переходить к следующему изображению")
+				drainChannels(jobs, retry, results)
+				break WorkerLoop
+			default:
+
+			}
+
+			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					continue
+				}
+				fmt.Println("Ошибка подключения к воркеру: ", err)
+				continue
+			}
+
+			fmt.Println("Воркер подключился")
+			go handleWorker(conn, jobs, retry, results)
+		}
+
 	}
 }
 
@@ -94,13 +133,13 @@ func getTask(jobs, retry chan protocol.Task) protocol.Task {
 	}
 
 }
-func CuttingAndDistribution(jobs chan protocol.Task) (int, *image.RGBA) {
+func CuttingAndDistribution(jobs chan protocol.Task, filename string) (int, *image.RGBA) {
 	filePath := os.Getenv("INPUT_PATH")
 	if filePath == "" {
-		filePath = "images/input.jpg"
+		filePath = "images/"
 	}
 
-	file, err := os.Open(filePath) //прием не только input.jpg
+	file, err := os.Open(filePath + filename)
 	if err != nil {
 		fmt.Printf("Ошибка: не удалось найти файл по пути %s: %v\n", filePath, err)
 		return 0, nil
@@ -143,7 +182,7 @@ func CuttingAndDistribution(jobs chan protocol.Task) (int, *image.RGBA) {
 	return totalTasks, rgbaImg
 }
 
-func ImageCollector(results chan protocol.Result, rgbaImg *image.RGBA, totalTasks int) {
+func ImageCollector(results chan protocol.Result, rgbaImg *image.RGBA, totalTasks int, next chan bool, fileName string) {
 	completed := 0
 	for res := range results {
 		offset := res.Bounds.Min.Y * rgbaImg.Stride
@@ -155,15 +194,16 @@ func ImageCollector(results chan protocol.Result, rgbaImg *image.RGBA, totalTask
 		if completed == totalTasks {
 			fmt.Println("Все части получены. Формируем файл...")
 
-			saveImage(rgbaImg)
+			saveImage(rgbaImg, fileName)
 			fmt.Println("Работа завершена успешно!")
-			os.Exit(0)
+			next <- true
+			return
 		}
 	}
 }
 
-func saveImage(img *image.RGBA) {
-	f, err := os.Create("images/output.png")
+func saveImage(img *image.RGBA, fileName string) {
+	f, err := os.Create("images/" + fileName)
 	if err != nil {
 		fmt.Println("Ошибка при создании файла:", err)
 		return
@@ -175,5 +215,16 @@ func saveImage(img *image.RGBA) {
 	}
 }
 
+func drainChannels(jobs, retry chan protocol.Task, results chan protocol.Result) {
+	for len(jobs) > 0 {
+		<-jobs
+	}
+	for len(retry) > 0 {
+		<-retry
+	}
+	for len(results) > 0 {
+		<-results
+	}
+}
+
 //grafana для визуализации
-//воркеры на выбор
