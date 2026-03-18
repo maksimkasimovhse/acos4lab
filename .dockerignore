@@ -1,0 +1,7 @@
+images
+.git
+*.md
+*.log
+*.tmp
+Dockerfile
+**/.DS_Store

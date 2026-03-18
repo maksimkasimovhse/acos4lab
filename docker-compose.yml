@@ -6,10 +6,11 @@ services:
     stdin_open: true
     tty: true
     environment:
-      - INPUT_PATH=images/
+      - INPUT_PATH=/app/images/
       - SERVER_PORT=:8080
     volumes:
-      - ./images:/root/images
+      - ./images:/app/images
+    restart: on-failure
 
   worker:
     build:
@@ -19,6 +20,5 @@ services:
       - SERVER_ADDR=server:8080
     depends_on:
       - server
-    deploy:
-      replicas: 3
+    scale: 3
     restart: on-failure
